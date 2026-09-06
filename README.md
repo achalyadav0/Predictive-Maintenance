@@ -1,61 +1,130 @@
-# CNN-Based Fault Classification from Multi-Axis Vibration Spectrograms in Brownfield CNC Milling under Severe Class Imbalance
+# CNN-Based Fault Classification from Multi-Axis Vibration Spectrograms in Brownfield CNC Milling
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
-[![TensorFlow 2.x](https://img.shields.io/badge/TensorFlow-2.x-orange.svg)](https://tensorflow.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+This repository contains a research-focused implementation of a predictive maintenance pipeline for CNC milling using vibration signals. The project converts tri-axial accelerometer data into time-frequency spectrograms and classifies each recording as normal or anomalous using a convolutional neural network.
 
-An end-to-end deep learning framework for predictive maintenance and real-time fault detection in industrial CNC milling machines operating under extreme class imbalance (96:4 normal-to-anomalous ratio).
+The project is designed for academic and experimental use, especially under severe class imbalance, and is intended to study robust fault detection in brownfield industrial settings.
 
----
+## Overview
 
-## 📌 Abstract
+The implementation follows the methodology described in the included paper, which is stored as [CNC_ML_paper.pdf](CNC_ML_paper.pdf). The workflow is:
 
-Unplanned tool and process failures in Computer Numerical Control (CNC) milling cause costly scrap parts and downtime. This project implements a **multi-axis STFT spectrogram CNN pipeline** that converts tri-axial ($X, Y, Z$) accelerometer signals into Short-Time Fourier Transform spectrograms, fusing them as 3-channel tensors (similar to RGB images) for binary fault classification. 
+1. Download the CNC milling vibration dataset from Kaggle
+2. Load X, Y, and Z acceleration channels
+3. Remove DC bias and standardize each axis
+4. Compute STFT spectrograms
+5. Convert each axis spectrogram to a normalized 2D representation
+6. Stack the three axes into a 3-channel tensor
+7. Train a CNN for binary classification
+8. Use class weighting and PR-AUC-based optimization under severe imbalance
 
-Using Bayesian hyperparameter optimization targeting **Precision-Recall AUC (PR-AUC)** rather than standard accuracy or ROC-AUC, test performance improves from **0.483** (untuned baseline) to **0.937** (tuned SGD model) while maintaining a lightweight model footprint (<300K parameters).
+## Research Objective
 
----
+The goal is to detect rare anomalous machine behavior in CNC milling from vibration data where the normal class dominates the dataset. In this benchmark, the class ratio is approximately 96:4, which makes standard accuracy misleading and motivates PR-AUC as the primary metric.
 
-## 🏗️ Architecture & Pipeline
-Tri-Axial Sensor Signal (X, Y, Z @ 2 kHz)──►
-Mean-Centering & Standardization
-──►
-Short-Time Fourier Transform (STFT)
-(Hann window, NFFT=256, Overlap=128)
-──►
-Power Spectrogram in dB [-80, 0]
-──►
-3-Channel Tensor Stacking (129 x 306 x 3)
-──►
-CNN Architecture (Conv + BatchNorm + MaxPool + Dropout)
-──►
-Global Average Pooling ──► Dense Layers ──► Sigmoid Output
+## Dataset
 
----
+The project uses the brownfield CNC milling benchmark introduced for real industrial monitoring. The dataset contains records from three machines (M01 to M03) and is labeled as:
 
-## 📊 Dataset Details
+- good / normal
+- bad / anomalous
 
-We evaluate on the brownfield CNC milling vibration benchmark dataset collected across 3 real-world industrial machines (M01–M03):
+The accessible subset used in this repo contains:
 
-* **Total Samples:** 1,702 labeled recordings
-* **Class Distribution:** 1,632 Normal (95.9%) vs. 70 Anomalous (4.1%)
-* **Imbalance Ratio:** ~23:1 (Severe skew)
-* **Sampling Rate:** 2 kHz tri-axial acceleration
+- 1,702 labeled recordings
+- 1,632 normal samples
+- 70 anomalous samples
+- imbalance ratio of about 23:1
+- 2 kHz tri-axial accelerometer sampling
 
----
+## Methodology
 
-## Experimental Results
+The CNN pipeline uses:
 
-Evaluated using a 65/35 stratified train/test split. All metrics are computed directly from predicted probabilities on held-out test data.
+- mean-centering and standardization per axis
+- STFT with Hann window, 256-sample segment length, 128 overlap
+- power spectrogram conversion in dB scale
+- fixed-size resizing to 129 x 306 spectrograms
+- stacking of X/Y/Z spectrograms as channels
+- CNN with batch normalization, pooling, and dropout
+- binary cross-entropy with class weighting
+- Bayesian hyperparameter tuning using Keras Tuner
+- PR-AUC as the main validation objective
 
-| Model Variant | Optimizer | Validation Strategy | Test PR-AUC 📈 | Test ROC-AUC 🎯 |
-| :--- | :--- | :--- | :---: | :---: |
-| Untuned Baseline | Adam | Fixed Architecture | 0.483 | 0.914 |
-| Untuned Baseline | SGD + Momentum | Fixed Architecture | 0.513 | 0.923 |
-| **Bayesian-Tuned** | Adam | Keras Tuner (PR-AUC) | 0.877 | 0.982 |
-| **Bayesian-Tuned (Best)** | **SGD + Momentum** | **Keras Tuner (PR-AUC)** | **0.937** | **0.994** |
+## Key Findings
 
-> **Key Insight:** Standard ROC-AUC produces overly optimistic metrics (~0.92) on untuned models despite poor minority-class detection. Targeting **PR-AUC** during Bayesian optimization doubled model precision-recall performance.
+The repo reports the following test results on the held-out split described in the paper:
+
+| Model Variant | Optimizer | Test PR-AUC | Test ROC-AUC |
+| --- | --- | ---: | ---: |
+| Untuned baseline | Adam | 0.483 | 0.914 |
+| Untuned baseline | SGD + momentum | 0.513 | 0.923 |
+| Bayesian tuned | Adam | 0.877 | 0.982 |
+| Bayesian tuned | SGD + momentum | 0.937 | 0.994 |
+
+The main insight is that PR-AUC is much more informative than ROC-AUC for this task because the minority class is rare and standard ROC metrics can look overly optimistic.
+
+## Important limitation
+
+This repo is a research prototype, not a production-ready deployment model.
+
+The paper explicitly notes a major limitation:
+
+- the evaluation uses a random stratified split
+- the dataset is designed to expose cross-machine and cross-time drift
+- therefore, the reported performance may overestimate real-world generalization
+
+For future work, a drift-aware evaluation such as leave-one-machine-out or time-based split is recommended.
+
+## Repository Structure
+
+- [predictive_maintinance.py](predictive_maintinance.py): main implementation containing data loading, preprocessing, CNN training, tuning, and evaluation
+- [README.md](README.md): project summary and research overview
+- [CNC_ML_paper.pdf](CNC_ML_paper.pdf): paper describing the methodology and results
+
+## Setup
+
+This project depends on:
+
+- Python 3.8+
+- TensorFlow / Keras
+- Keras Tuner
+- NumPy
+- pandas
+- matplotlib
+- SciPy
+- scikit-learn
+- kagglehub
+
+Install dependencies using:
+
+```bash
+pip install tensorflow matplotlib keras-tuner scikit-learn scipy pandas numpy kagglehub
+```
+
+Then run the main script:
+
+```bash
+python predictive_maintinance.py
+```
+
+> Note: Kaggle dataset access may require Kaggle credentials configured in your environment.
+
+## Usage Notes
+
+This repository is intended for:
+
+- experimentation
+- academic research
+- model exploration and benchmarking
+- learning about spectrogram-based fault detection in industrial settings
+
+It is not presented here as a fully packaged production system or deployment pipeline.
+
+## Summary
+
+This project demonstrates a strong research approach for predictive maintenance in CNC milling using vibration spectrograms and CNNs. It is especially relevant when dealing with rare machine faults and severe class imbalance.
+
+The strongest research takeaway is that PR-AUC-guided tuning substantially improves anomaly detection performance compared with untuned models, while also highlighting the need for drift-aware evaluation before claiming deployment readiness.
 
 
 
